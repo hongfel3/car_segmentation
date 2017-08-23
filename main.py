@@ -10,6 +10,8 @@ from torchvision import transforms
 
 import datasets.utils as data_utils
 
+from tqdm import tqdm
+
 # parser = argparse.ArgumentParser(description='Car-segmentation kaggle competition')
 #
 # parser.add_argument('--workers', default=4, type=int, metavar='N', help='number of data loading workers (default: 4)')
@@ -39,38 +41,35 @@ train_dataset = dsets.CARVANA(root="./data/",
                               transform=transforms.Compose([
                                   transforms.Scale(256),
                                   transforms.RandomCrop(256),
-                                  transforms.ToTensor(),
-                              ])
+                                  transforms.ToTensor()])
                               )
 train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
                                            batch_size=batch_size,
                                            shuffle=True,
                                            pin_memory=False,
                                            num_workers=1)
-# unet = models.UNET_256().cuda()
-# criterion = models.BCELoss2d().cuda()
-# optimizer = optim.SGD(unet.parameters(),
-#                       lr=lr,
-                      # momentum=momentum,
-                      # nesterov=nesterov)
+unet = models.UNET_256().cuda()
+criterion = models.BCELoss2d().cuda()
+optimizer = optim.SGD(unet.parameters(),
+                      lr=lr,
+                      momentum=momentum,
+                      nesterov=nesterov)
 
 for epoch in range(num_epochs):
-    # pbar = tqdm()
-    for i, (images, labels) in enumerate(train_loader):
+    pbar = tqdm(enumerate(train_loader))
+    for i, (images, labels) in pbar:
         # Convert torch tensor to Variable
-        data_utils.im_show([images[0], labels[0]])
         images = Variable(images.cuda())
         labels = Variable(labels.cuda())
 
-        # # Forward + Backward + Optimize
-        # optimizer.zero_grad()  # zero the gradient buffer
-        # outputs = unet(images)
-        # loss = criterion(outputs, labels)
-        # loss.backward()
-        # optimizer.step()
-        # images, labels = None, None
-        # gc.collect()
+        # Forward + Backward + Optimize
+        optimizer.zero_grad()  # zero the gradient buffer
+        outputs = unet(images)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+        images, labels = None, None
+        gc.collect()
 
-        # pbar.set_description('EPOCH %d/ %d || LOSS: %.4f || '
-        #                      % (epoch+1, num_epochs, loss.data[0]))
-
+        pbar.set_description('EPOCH %d/ %d || LOSS: %.4f || '
+                             % (epoch + 1, num_epochs, loss.data[0]))

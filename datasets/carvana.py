@@ -1,0 +1,77 @@
+from torch.utils.data.dataset import Dataset
+
+import os
+from os.path import isfile, join
+
+from tqdm import tqdm
+
+from PIL import Image
+
+class CARVANA(Dataset):
+    """
+        CARVANA dataset that contains car images as .jpg. Each car has 16 images
+        taken in different angles and a unique id: id_01.jpg, id_02.jpg, ..., id_16.jpg
+        The labels are provided as a .gif image that contains the manually cutout mask
+        for each training image
+    """
+
+    def __init__(self, root, train=True, transform=None):
+        """
+
+        :param root: it has to be a path to the folder that contains the dataset folders
+        :param train: boolean true if you want the train set false for the test one
+        :param transform: transform the images and labels
+        """
+
+        # initialize variables
+        self.root = os.path.expanduser(root)
+        self.transform = transform
+        self.train = train
+        self.data, self.labels = [], []
+
+        def load_images(path, data):
+            """
+            loads all the images in path and stores them in data.
+
+            :param path:
+            :param data:
+            :return: tensor with all the images from path loaded
+            """
+
+            # read path content
+            images_dir = [f for f in os.listdir(path) if isfile(join(path, f))]
+            images_dir.sort()
+
+            # load images
+            for image in tqdm(images_dir, desc="loading data"):
+                    data.append(Image.open(join(path, image)))
+
+            return data
+
+        if self.train:
+            self.data = load_images(self.root + "/train", self.data)
+            self.labels = load_images(self.root + "/train_masks", self.labels)
+        else:
+            self.data = load_images(self.root + "/test", self.data)
+            self.labels = None
+
+    def __getitem__(self, index):
+        """
+
+        :param index:
+        :return: tuple (img, target) with the input data and its label
+        """
+
+        # load image and labels
+        img = self.data[index]
+        target = self.labels[index] if self.train else None
+
+        # apply transforms to both
+        if self.transform is not None:
+            img = self.transform(img)
+            target = self.transform(target)
+
+        return img, target
+
+    def __len__(self):
+        return len(self.data)

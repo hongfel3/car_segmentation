@@ -1,8 +1,8 @@
 from torchvision import transforms
 import matplotlib.pyplot as plt
 import numpy as np
-
-
+import shutil
+import torch
 
 def im_show(img_list):
     """
@@ -36,3 +36,36 @@ def rle_encode(mask_image):
     runs = np.where(pixels[1:] != pixels[:-1])[0] + 2
     runs[1::2] = runs[1::2] - runs[:-1:2]
     return runs
+
+
+def save_checkpoint(state, is_best, filename='./checkpoints/checkpoint.pth.tar'):
+    """
+    https://github.com/pytorch/examples/blob/master/imagenet/main.py
+    :param state:
+    :param is_best:
+    :param filename:
+    :return:
+    """
+    torch.save(state, filename)
+    if is_best:
+        shutil.copyfile(filename, 'model_best.pth.tar')
+
+class AverageMeter(object):
+    """
+    https://github.com/pytorch/examples/blob/master/imagenet/main.py
+    Computes and stores the average and current value
+    """
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count

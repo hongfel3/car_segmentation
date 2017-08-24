@@ -1,11 +1,12 @@
 from torch.utils.data.dataset import Dataset
-
+import torch
 import os
 from os.path import isfile, join
 
 from tqdm import tqdm
 
 from PIL import Image
+
 
 class CARVANA(Dataset):
     """
@@ -15,7 +16,7 @@ class CARVANA(Dataset):
         for each training image
     """
 
-    def __init__(self, root, train=True, transform=None):
+    def __init__(self, root, subset="train", transform=None):
         """
 
         :param root: it has to be a path to the folder that contains the dataset folders
@@ -26,34 +27,34 @@ class CARVANA(Dataset):
         # initialize variables
         self.root = os.path.expanduser(root)
         self.transform = transform
-        self.train = train
-        self.data, self.labels = [], []
+        self.subset = subset
+        self.data_path, self.labels_path = [], []
 
-        def load_images(path, data):
+        def load_images(path):
             """
-            loads all the images in path and stores them in data.
+            returns all the sorted image paths.
 
             :param path:
-            :param data:
-            :return: tensor with all the images from path loaded
+            :return: array with all the paths to the images
             """
-
-            # read path content
-            images_dir = [f for f in os.listdir(path) if isfile(join(path, f))]
+            images_dir = [join(path, f) for f in os.listdir(path) if isfile(join(path, f))]
             images_dir.sort()
 
-            # load images
-            for image in tqdm(images_dir, desc="loading data"):
-                    data.append(Image.open(join(path, image)))
+            return images_dir
 
-            return data
-
-        if self.train:
-            self.data = load_images(self.root + "/train", self.data)
-            self.labels = load_images(self.root + "/train_masks", self.labels)
+        # load the data regarding the subset
+        if self.subset == "train":
+            self.data_path = load_images(self.root + "/train")
+            self.labels_path = load_images(self.root + "/train_masks")
+        elif self.subset == "val":
+            self.data_path = load_images(self.root + "/val")
+            self.labels_path = load_images(self.root + "/val_masks")
+        elif self.subset == "test":
+            self.data_path = load_images(self.root + "/test")
+            self.labels_path = None
         else:
-            self.data = load_images(self.root + "/test", self.data)
-            self.labels = None
+            raise RuntimeError('Invalid subset ' + self.subset + ', it must be one of:'
+                                                                 ' \'train\', \'val\' or \'test\'')
 
     def __getitem__(self, index):
         """
@@ -63,8 +64,8 @@ class CARVANA(Dataset):
         """
 
         # load image and labels
-        img = self.data[index]
-        target = self.labels[index] if self.train else None
+        img = Image.open(self.data_path[index])
+        target = Image.open(self.labels_path[index]) if not self.subset == 'test' else None
 
         # apply transforms to both
         if self.transform is not None:
@@ -74,4 +75,4 @@ class CARVANA(Dataset):
         return img, target
 
     def __len__(self):
-        return len(self.data)
+        return len(self.data_path)

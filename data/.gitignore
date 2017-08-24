@@ -1,3 +1,5 @@
 train/*
 train_masks/*
 test/*
+val/*
+val_masks/*

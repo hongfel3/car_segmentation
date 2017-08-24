@@ -7,7 +7,7 @@ import torch.optim as optim
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torchvision import transforms
-
+from sklearn.model_selection import train_test_split
 import datasets.utils as data_utils
 
 from tqdm import tqdm
@@ -36,6 +36,7 @@ lr = 0.001
 momentum = 0.9
 nesterov = True
 
+# create dataset
 train_dataset = dsets.CARVANA(root="./data/",
                               train=True,
                               transform=transforms.Compose([
@@ -43,21 +44,30 @@ train_dataset = dsets.CARVANA(root="./data/",
                                   transforms.RandomCrop(256),
                                   transforms.ToTensor()])
                               )
+
+# define the dataloader with the previous dataset
 train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
                                            batch_size=batch_size,
                                            shuffle=True,
                                            pin_memory=False,
                                            num_workers=1)
-unet = models.UNET_256().cuda()
+
+# create model, define the loss function and the optimizer.
+# Move everything to cuda
+unet = models.small_UNET_256().cuda()
 criterion = models.BCELoss2d().cuda()
 optimizer = optim.SGD(unet.parameters(),
                       lr=lr,
                       momentum=momentum,
                       nesterov=nesterov)
 
+# run the training loop
 for epoch in range(num_epochs):
+
+    # set a progress bar
     pbar = tqdm(enumerate(train_loader))
     for i, (images, labels) in pbar:
+
         # Convert torch tensor to Variable
         images = Variable(images.cuda())
         labels = Variable(labels.cuda())
@@ -71,5 +81,6 @@ for epoch in range(num_epochs):
         images, labels = None, None
         gc.collect()
 
-        pbar.set_description('EPOCH %d/ %d || LOSS: %.4f || '
+        # update progress bar status
+        pbar.set_description('EPOCH %d/ %d || BATCH LOSS: %.4f || '
                              % (epoch + 1, num_epochs, loss.data[0]))

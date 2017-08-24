@@ -5,8 +5,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Do not upload trash in .other/
+# Do not upload trash in
 other/*
+logs/*
+runs/*
 
 # C extensions
 *.so

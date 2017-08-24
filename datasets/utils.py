@@ -4,6 +4,7 @@ import numpy as np
 import shutil
 import torch
 
+
 def im_show(img_list):
     """
     It receives a list of images and plots them together
@@ -50,11 +51,13 @@ def save_checkpoint(state, is_best, filename='./checkpoints/checkpoint.pth.tar')
     if is_best:
         shutil.copyfile(filename, 'model_best.pth.tar')
 
+
 class AverageMeter(object):
     """
     https://github.com/pytorch/examples/blob/master/imagenet/main.py
     Computes and stores the average and current value
     """
+
     def __init__(self):
         self.reset()
 
@@ -69,3 +72,12 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
+
+
+def to_np(x):
+    """
+    https://github.com/yunjey/pytorch-tutorial/blob/master/tutorials/04-utils/tensorboard/main.py#L20
+    :param x:
+    :return:
+    """
+    return x.data.cpu().numpy()

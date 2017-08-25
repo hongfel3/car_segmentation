@@ -11,6 +11,7 @@ import datasets.utils as data_utils
 import models.utils as model_utils
 from tf_logger import Logger
 from tqdm import tqdm
+from tensorboardX import SummaryWriter
 
 # define the parser arguments
 parser = argparse.ArgumentParser(description='Car-segmentation kaggle competition')
@@ -40,6 +41,9 @@ parser.add_argument('--pretrained', dest='pretrained', action='store_true', help
 global args, best_loss
 args = parser.parse_args()
 best_loss = 0
+
+writer = SummaryWriter(log_dir=args.logs_dir,comment=args.arch)
+
 
 # create datasets
 train_dataset = dsets.CARVANA(root=args.dir,
@@ -110,13 +114,15 @@ def train(train_loader, model, criterion, epoch):
         optimizer.step()
 
         # logging
-        logger.scalar_summary('(train)loss_val', losses.val, i + 1)
-        logger.scalar_summary('(train)loss_avg', losses.avg, i + 1)
-
-        for tag, value in model.named_parameters():
-            tag = tag.replace('.', '/')
-            logger.histo_summary('(train)' + tag, data_utils.to_np(value), i + 1)
-            logger.histo_summary('(train)' + tag + '/grad', data_utils.to_np(value.grad), i + 1)
+        writer.add_scalar('data/(val)loss_val', losses.val, i + 1)
+        #
+        # logger.scalar_summary('(train)loss_val', losses.val, i + 1)
+        # logger.scalar_summary('(train)loss_avg', losses.avg, i + 1)
+        #
+        # for tag, value in model.named_parameters():
+        #     tag = tag.replace('.', '/')
+        #     logger.histo_summary('(train)' + tag, data_utils.to_np(value), i + 1)
+        #     logger.histo_summary('(train)' + tag + '/grad', data_utils.to_np(value.grad), i + 1)
         #
         # logger.image_summary('[TRAIN] model outputs', data_utils.to_np(outputs), epoch + 1)
 
@@ -145,8 +151,9 @@ def validate(val_loader, model, criterion, epoch):
         losses.update(loss.data[0], images.size(0))
 
         # logging
-        logger.scalar_summary('data/(val)loss_val', losses.val, i + 1)
-        logger.scalar_summary('data/(val)loss_avg', losses.avg, i + 1)
+        # logger.scalar_summary('data/(val)loss_val', losses.val, i + 1)
+        # logger.scalar_summary('data/(val)loss_avg', losses.avg, i + 1)
+        writer.add_scalar('data/(val)loss_val', losses.val, i + 1)
 
         # for tag, value in model.named_parameters():
         #     tag = tag.replace('.', '/')

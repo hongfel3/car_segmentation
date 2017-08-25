@@ -73,7 +73,7 @@ val_loader = torch.utils.data.DataLoader(dataset=val_dataset,
 
 # create model, define the loss function and the optimizer.
 # Move everything to cuda
-model = models.UNET_256().cuda()
+model = models.small_UNET_256().cuda()
 criterion = models.BCELoss2d().cuda()
 optimizer = optim.SGD(model.parameters(),
                       weight_decay=args.weight_decay,

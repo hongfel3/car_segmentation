@@ -2,9 +2,9 @@ from torch import nn
 import torch.nn.functional as F
 
 
-class BCELoss2d(nn.Module):
+class BCELoss_logits(nn.Module):
     def __init__(self, weight=None, size_average=True):
-        super(BCELoss2d, self).__init__()
+        super(BCELoss_logits, self).__init__()
         self.bce_loss = nn.BCELoss(weight, size_average)
 
     def forward(self, logits, targets):

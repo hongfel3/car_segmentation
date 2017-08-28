@@ -1,4 +1,4 @@
-from .criterions import BCELoss2d
+from .criterions import BCELoss_logits
 from .unet import UNET_256, small_UNET_256
 
-__ALL__ = [BCELoss2d, UNET_256, small_UNET_256]
+__ALL__ = [BCELoss_logits, UNET_256, small_UNET_256]

@@ -43,6 +43,8 @@ global args, best_loss
 args = parser.parse_args()
 best_loss = 0
 logger = SummaryWriter(log_dir=args.logs_dir, comment=args.arch)
+graph_logged = False
+
 
 def main():
     global args, best_loss
@@ -80,14 +82,12 @@ def main():
     # create model, define the loss function and the optimizer.
     # Move everything to cuda
     model = models.small_UNET_256().cuda()
-    criterion = models.BCELoss_logits().cuda()
+    criterion = models.BCE_plus_Dice().cuda()
     optimizer = optim.SGD(model.parameters(),
                           weight_decay=args.weight_decay,
                           lr=args.lr,
                           momentum=args.momentum,
                           nesterov=args.nesterov)
-
-
 
     # run the training loop
     for epoch in range(args.start_epoch, args.epochs):
@@ -113,9 +113,10 @@ def main():
 
     logger.close()
 
+
 # define the training function
 def train(train_loader, model, criterion, optimizer, epoch):
-    global args, logger
+    global args, logger, graph_logged
     model.train()
     losses = data_utils.AverageMeter()
 
@@ -139,7 +140,9 @@ def train(train_loader, model, criterion, optimizer, epoch):
         optimizer.step()
 
         # logging
-        logger.add_graph(model, outputs)
+        if not graph_logged:
+            logger.add_graph(model, outputs)
+            graph_logged = True
 
         logger.add_scalar('(train)loss_val', losses.val, i + 1)
         logger.add_scalar('(train)loss_avg', losses.avg, i + 1)
@@ -149,7 +152,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
             logger.add_histogram('model/(train)' + tag, data_utils.to_np(value), i + 1)
             logger.add_histogram('model/(train)' + tag + '/grad', data_utils.to_np(value.grad), i + 1)
 
-        logger.add_image('model/(train)output', make_grid(outputs.data), i + 1)
+        mask = outputs.data > 0.5
+        logger.add_image('model/(train)output', make_grid(mask.float()), i + 1)
 
         # update progress bar status
         pbar.set_description('[TRAIN] - EPOCH %d/ %d - BATCH LOSS: %.4f/ %.4f(avg) '
@@ -178,14 +182,15 @@ def validate(val_loader, model, criterion, epoch):
         # logging
         logger.add_scalar('data/(val)loss_val', losses.val, i + 1)
         logger.add_scalar('data/(val)loss_avg', losses.avg, i + 1)
-        logger.add_image('model/(val)output', make_grid(outputs.data), i + 1)
+
+        mask = outputs.data > 0.5
+        logger.add_image('model/(val)output', make_grid(mask.float()), i + 1)
 
         # update progress bar status
         pbar.set_description('[VAL] - EPOCH %d/ %d - BATCH LOSS: %.4f/ %.4f(avg) '
                              % (epoch + 1, args.epochs, losses.val, losses.avg))
 
     return losses.avg
-
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ class small_UNET_256(nn.Module):
             conv_block(32, 64),
             conv_block(64, 128))
 
-        self.middle = conv_block(128, 128, kernel_size=1, padding= 0)
+        self.middle = conv_block(128, 128, kernel_size=1, padding=0)
 
         self.up_2 = nn.Sequential(
             conv_block(256, 128),
@@ -76,7 +76,9 @@ class small_UNET_256(nn.Module):
 
         # 256
         out = F.upsample(out, scale_factor=2)
-        return self.output(out)
+
+        # return probabilites between 0-1 (not masked yet)
+        return F.sigmoid(self.output(out))
 
 
 class UNET_256(nn.Module):
@@ -169,4 +171,6 @@ class UNET_256(nn.Module):
 
         # 256
         out = F.upsample(out, scale_factor=2)
-        return self.output(out)
+
+        # return probabilites between 0-1 (not masked yet)
+        return F.sigmoid(self.output(out))

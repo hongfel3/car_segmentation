@@ -1,10 +1,12 @@
 from PIL import Image, ImageOps
+
 try:
     import accimage
 except ImportError:
     accimage = None
 import numbers
 import random
+
 
 class RandomCrop_unet(object):
     """Crop the given PIL.Image at a random location.
@@ -38,7 +40,6 @@ class RandomCrop_unet(object):
         if self.padding > 0:
             input = ImageOps.expand(input, border=self.padding, fill=0)
             target = ImageOps.expand(target, border=self.padding, fill=0)
-
 
         w, h = input.size
         th, tw = self.size

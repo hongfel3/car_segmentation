@@ -17,37 +17,30 @@
 #  - [ ] save output as a .csv ready to upload to the competition
 
 import os
+import shutil
 from os.path import isfile, join
-from PIL import Image
 
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
-
+from PIL import Image
+# tensorboard --logdir runs
+from tensorboardX import SummaryWriter
 from torch import nn
+from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torch.utils.data.dataset import Dataset
 from torchvision import transforms
 from torchvision.utils import make_grid
-from torch.autograd import Variable
-
 from tqdm import tqdm as tqdm
 
-import numpy as np
-
-import matplotlib.pyplot as plt
-
-import shutil
 
 # We need to install tensorboardX and tensorflow-tensorboard
-
 # pip install tensorboardX
 # pip install tensorflow-tensorboard
-
 # then run the following command on the terminal from your code path to see the logs:
-
-# tensorboard --logdir runs
-from tensorboardX import SummaryWriter
 
 
 # Create pytorch dataset

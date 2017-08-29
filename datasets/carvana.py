@@ -1,11 +1,10 @@
-from torch.utils.data.dataset import Dataset
-import torch
 import os
 from os.path import isfile, join
 
-from tqdm import tqdm
-
+import torch
 from PIL import Image
+from torch.utils.data.dataset import Dataset
+from tqdm import tqdm
 
 
 class CARVANA(Dataset):

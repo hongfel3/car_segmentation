@@ -1,18 +1,19 @@
-import gc
 import argparse
-import datasets as dsets
-import models
+
 import torch
 import torch.optim as optim
+from tensorboard import SummaryWriter
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torchvision import transforms
-import datasets.utils as data_utils
-import models.utils as model_utils
 from torchvision.utils import make_grid
 # from tf_logger import Logger
 from tqdm import tqdm
-from tensorboardX import SummaryWriter
+
+import datasets as dsets
+import datasets.utils as data_utils
+import models
+import models.utils as model_utils
 
 # define the parser arguments
 parser = argparse.ArgumentParser(description='Car-segmentation kaggle competition')
@@ -28,18 +29,21 @@ parser.add_argument('--workers', default=4, type=int, metavar='N', help='number 
 parser.add_argument('--epochs', default=45, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='manual epoch number (useful on restarts)')
 
-parser.add_argument('-b', '--batch-size', default=4, type=int, metavar='N', help='mini-batch size (default: 256)')
-parser.add_argument('--lr', '--learning-rate', default=1e-4, type=float, metavar='LR', help='initial learning rate')
+parser.add_argument('-b', '--batch-size', default=1, type=int, metavar='N', help='mini-batch size (default: 256)')
+parser.add_argument('--lr', '--learning-rate', default=1e-2, type=float, metavar='LR', help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')
-parser.add_argument('--weight-decay', default=1e-4, type=float, metavar='W', help='weight decay')
-parser.add_argument('--nesterov', default=True, type=bool, metavar='N', help='use nesterov momentum (default:True)')
+parser.add_argument('--weight-decay', default=5e-4, type=float, metavar='W', help='weight decay')
+parser.add_argument('--nesterov', default=False, type=bool, metavar='N', help='use nesterov momentum (default:True)')
+parser.add_argument('--batch_acum', default=15, type=bool, metavar='B', help='batch size of the accumulated batch')
+
+parser.add_argument('--model_log', default=500, type=int, metavar='I', help='number of iterations between logs')
 
 parser.add_argument('--resume', default='', type=str, metavar='PATH', help='path to latest checkpoint')
 parser.add_argument('--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
 parser.add_argument('--test', dest='test', action='store_true', help='evaluate model on test set')
 parser.add_argument('--pretrained', dest='pretrained', action='store_true', help='use pre-trained model')
 
-global args, best_loss
+global args, best_loss, logger, graph_logged
 args = parser.parse_args()
 best_loss = 0
 logger = SummaryWriter(log_dir=args.logs_dir, comment=args.arch)
@@ -53,16 +57,16 @@ def main():
     train_dataset = dsets.CARVANA(root=args.dir,
                                   subset="train",
                                   transform=transforms.Compose([
-                                      transforms.Scale(256),
-                                      transforms.RandomCrop(256),
+                                      transforms.Scale(1024),
+                                      transforms.RandomCrop(1024),
                                       transforms.ToTensor()])
                                   )
 
     val_dataset = dsets.CARVANA(root=args.dir,
                                 subset="val",
                                 transform=transforms.Compose([
-                                    transforms.Scale(256),
-                                    transforms.RandomCrop(256),
+                                    transforms.Scale(1024),
+                                    transforms.RandomCrop(1024),
                                     transforms.ToTensor()])
                                 )
 
@@ -81,8 +85,9 @@ def main():
 
     # create model, define the loss function and the optimizer.
     # Move everything to cuda
-    model = models.small_UNET_256().cuda()
-    criterion = models.BCE_plus_Dice().cuda()
+    model = models.UNET_256().cuda()
+    criterion = {'loss': models.weightedBCEplusDice().cuda(),
+                 'acc': models.diceLoss().cuda()}
     optimizer = optim.SGD(model.parameters(),
                           weight_decay=args.weight_decay,
                           lr=args.lr,
@@ -117,8 +122,12 @@ def main():
 # define the training function
 def train(train_loader, model, criterion, optimizer, epoch):
     global args, logger, graph_logged
+
     model.train()
     losses = data_utils.AverageMeter()
+    accuracy = data_utils.AverageMeter()
+
+    batch_acum = 0
 
     # set a progress bar
     pbar = tqdm(enumerate(train_loader), total=len(train_loader))
@@ -132,12 +141,18 @@ def train(train_loader, model, criterion, optimizer, epoch):
         outputs = model(images)
 
         # measure loss
-        loss = criterion(outputs, labels)
+        loss = criterion['loss'](outputs, labels)
         losses.update(loss.data[0], images.size(0))
 
+        # get accuracy
+        mask = (outputs.data > 0.5).float()
+        acc = criterion['acc'](mask, labels.data)
+        accuracy.update(acc, images.size(0))
+
         # compute gradient and do SGD step
-        loss.backward()
-        optimizer.step()
+        if args.batch_acum != -1 and batch_acum % args.batch_acum == 0:
+            loss.backward()
+            optimizer.step()
 
         # logging
         if not graph_logged:
@@ -147,24 +162,25 @@ def train(train_loader, model, criterion, optimizer, epoch):
         logger.add_scalar('(train)loss_val', losses.val, i + 1)
         logger.add_scalar('(train)loss_avg', losses.avg, i + 1)
 
-        for tag, value in model.named_parameters():
-            tag = tag.replace('.', '/')
-            logger.add_histogram('model/(train)' + tag, data_utils.to_np(value), i + 1)
-            logger.add_histogram('model/(train)' + tag + '/grad', data_utils.to_np(value.grad), i + 1)
+        if i % args.model_log == 0:
+            for tag, value in model.named_parameters():
+                tag = tag.replace('.', '/')
+                logger.add_histogram('model/(train)' + tag, data_utils.to_np(value), i + 1)
+                logger.add_histogram('model/(train)' + tag + '/grad', data_utils.to_np(value.grad), i + 1)
 
-        mask = outputs.data > 0.5
         logger.add_image('model/(train)output', make_grid(mask.float()), i + 1)
 
         # update progress bar status
-        pbar.set_description('[TRAIN] - EPOCH %d/ %d - BATCH LOSS: %.4f/ %.4f(avg) '
-                             % (epoch + 1, args.epochs, losses.val, losses.avg))
+        pbar.set_description('EPOCH %d/ %d - LOSS %.4f/ %.4f(avg) - ACC %.4f/ %.4f(avg)'
+                             % (epoch + 1, args.epochs, losses.val, losses.avg, accuracy.val,
+                                accuracy.avg))  # define the validation function
 
 
-# define the validation function
 def validate(val_loader, model, criterion, epoch):
     global args, logger
     model.eval()
     losses = data_utils.AverageMeter()
+    accuracy = data_utils.AverageMeter()
 
     # set a progress bar
     pbar = tqdm(enumerate(val_loader), total=len(val_loader))
@@ -175,16 +191,20 @@ def validate(val_loader, model, criterion, epoch):
 
         # compute output
         outputs = model(images)
-        # measure loss and log it
-        loss = criterion(outputs, labels)
+
+        # measure loss, accuracy and log it
+        loss = criterion['loss'](outputs, labels)
         losses.update(loss.data[0], images.size(0))
+
+        mask = (outputs.data > 0.5).float()
+        acc = criterion['acc'](mask, labels.data)
+        accuracy.update(acc, images.size(0))
 
         # logging
         logger.add_scalar('data/(val)loss_val', losses.val, i + 1)
         logger.add_scalar('data/(val)loss_avg', losses.avg, i + 1)
 
-        mask = outputs.data > 0.5
-        logger.add_image('model/(val)output', make_grid(mask.float()), i + 1)
+        logger.add_image('model/(val)output', make_grid(mask), i + 1)
 
         # update progress bar status
         pbar.set_description('[VAL] - EPOCH %d/ %d - BATCH LOSS: %.4f/ %.4f(avg) '

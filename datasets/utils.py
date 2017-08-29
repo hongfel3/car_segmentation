@@ -1,8 +1,9 @@
-from torchvision import transforms
+import shutil
+
 import matplotlib.pyplot as plt
 import numpy as np
-import shutil
 import torch
+from torchvision import transforms
 
 
 def im_show(img_list):

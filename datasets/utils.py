@@ -18,6 +18,7 @@ def im_show(img_list):
         img = np.array(to_PIL(img))
         plt.subplot(100 + 10 * len(img_list) + (idx + 1))
         plt.imshow(img)
+        plt.colorbar()
 
     plt.show()
 
@@ -50,7 +51,7 @@ def save_checkpoint(state, is_best, filename='./checkpoints/checkpoint.pth.tar')
     """
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, 'model_best.pth.tar')
+        shutil.copyfile(filename, './checkpoints/model_best.pth.tar')
 
 
 class AverageMeter(object):

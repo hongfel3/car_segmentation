@@ -4,15 +4,15 @@ from torch import nn
 from torch.autograd import Variable
 
 
-class BCELossLogits(nn.Module):
-    def __init__(self, weight=None, size_average=True):
-        super(BCELossLogits, self).__init__()
-        self.bce_loss = nn.BCELoss(weight, size_average)
+class BCELoss_seg(nn.Module):
+    def __init__(self):
+        super(BCELoss_seg, self).__init__()
+        self.bce_loss = nn.BCEWithLogitsLoss()
 
     def forward(self, inputs, targets):
-        probs_flat = inputs.view(-1)
+        inputs_flat = inputs.view(-1)
         targets_flat = targets.view(-1)
-        return self.bce_loss(probs_flat, targets_flat)
+        return self.bce_loss(inputs_flat, targets_flat)
 
 
 class weightedBCELoss2d(nn.Module):
@@ -29,10 +29,10 @@ class weightedBCELoss2d(nn.Module):
         return loss
 
 
-class diceLoss(nn.Module):
+class diceAcc(nn.Module):
     def __init__(self, size_average=True):
         self.size_average = size_average
-        super(diceLoss, self).__init__()
+        super(diceAcc, self).__init__()
 
     def forward(self, inputs, targets):
         size = targets.size(0)
@@ -45,11 +45,37 @@ class diceLoss(nn.Module):
         return res.sum() / size if self.size_average else res
 
 
+class SoftDiceLoss(nn.Module):
+    def __init__(self):  # weight=None, size_average=True):
+        super(SoftDiceLoss, self).__init__()
+
+    def forward(self, logits, labels):
+        probs = F.sigmoid(logits)
+        num = labels.size(0)
+        m1 = probs.view(num, -1)
+        m2 = labels.view(num, -1)
+        intersection = (m1 * m2)
+        score = 2. * (intersection.sum(1) + 1) / (m1.sum(1) + m2.sum(1) + 1)
+        score = 1 - score.sum() / num
+        return score
+
+
+class diceLoss(nn.Module):
+    def __init__(self, size_average=True):
+        super(diceLoss, self).__init__()
+        self.dice = diceAcc(size_average)
+
+    def forward(self, inputs, targets):
+        # inputs = F.sigmoid(inputs)
+        return 1 - self.dice(inputs, targets)
+
+
 class weightedDiceLoss(nn.Module):
     def __init__(self):
         super(weightedDiceLoss, self).__init__()
 
     def forward(self, inputs, labels, weights):
+        inputs = F.sigmoid(inputs)
         num = labels.size(0)
         w = (weights).view(num, -1)
         w2 = w * w
@@ -65,7 +91,7 @@ class weightedDiceLoss(nn.Module):
 class BCEplusDice(nn.Module):
     def __init__(self, weight=None, size_average=True):
         super(BCEplusDice, self).__init__()
-        self.BCE = BCELossLogits(weight, size_average)
+        self.BCE = BCELoss_seg()
         self.dice = diceLoss()
 
     def forward(self, inputs, targets):

@@ -1,10 +1,8 @@
 import os
 from os.path import isfile, join
 
-import torch
 from PIL import Image
 from torch.utils.data.dataset import Dataset
-from tqdm import tqdm
 
 
 class CARVANA(Dataset):
@@ -62,14 +60,13 @@ class CARVANA(Dataset):
         :return: tuple (img, target) with the input data and its label
         """
 
-        # load image and labels
+        # load image and labels as PIL format
         img = Image.open(self.data_path[index])
         target = Image.open(self.labels_path[index]) if not self.subset == 'test' else None
 
         # apply transforms to both
         if self.transform is not None:
-            img = self.transform(img)
-            target = self.transform(target)
+            img, target = self.transform(img, target)
 
         return img, target
 

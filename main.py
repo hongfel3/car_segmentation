@@ -5,7 +5,6 @@ import torch.optim as optim
 from tensorboard import SummaryWriter
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
-from torchvision import transforms
 from torchvision.utils import make_grid
 # from tf_logger import Logger
 from tqdm import tqdm
@@ -24,18 +23,20 @@ parser.add_argument('--dir', default="./data/", type=str, metavar='D',
 parser.add_argument('--logs_dir', default=None, type=str, metavar='L',
                     help='path to the logs folder (default: ./logs/')
 
-parser.add_argument('--arch', '-a', metavar='ARCH', default='UNET_256')
+parser.add_argument('--arch', '-a', metavar='ARCH', default='UNET_1024_ShiftScaleRotate')
 parser.add_argument('--workers', default=4, type=int, metavar='N', help='number of data loading workers (default: 4)')
 
 parser.add_argument('--epochs', default=45, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='manual epoch number (useful on restarts)')
+parser.add_argument('--adjust-epoch', default=15, type=int, metavar='E',
+                    help='Number of epochs to run to adjust the learning rate')
 
 parser.add_argument('-b', '--batch-size', default=1, type=int, metavar='N', help='mini-batch size (default: 256)')
 parser.add_argument('--lr', '--learning-rate', default=1e-4, type=float, metavar='LR', help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')
 parser.add_argument('--weight-decay', default=5e-4, type=float, metavar='W', help='weight decay')
 parser.add_argument('--nesterov', default=False, type=bool, metavar='N', help='use nesterov momentum (default:True)')
-parser.add_argument('--batch_acum', default=4, type=bool, metavar='B',
+parser.add_argument('--batch_acum', default=10, type=bool, metavar='B',
                     help='number of iterations the batch is accumulated')
 
 parser.add_argument('--model_log', default=500, type=int, metavar='I', help='number of iterations between logs')
@@ -59,19 +60,18 @@ def main():
     train_dataset = dsets.CARVANA(root=args.dir,
                                   subset="train",
                                   transform=unet_transforms.Compose([
-                                      unet_transforms.Scale((1024,1024)),
+                                      unet_transforms.Scale((1024, 1024)),
                                       unet_transforms.ToNumpy(),
                                       unet_transforms.RandomShiftScaleRotate(),
                                       unet_transforms.ToTensor(),
-                                      # unet_transforms.RandomCrop(1024),
                                   ])
                                   )
 
     val_dataset = dsets.CARVANA(root=args.dir,
                                 subset="val",
-                                transform=transforms.Compose([
-                                    unet_transforms.Scale((1024,1024)),
-                                    # unet_transforms.RandomCrop(1024),
+                                transform=unet_transforms.Compose([
+                                    unet_transforms.Scale((1024, 1024)),
+                                    unet_transforms.ToNumpy(),
                                     unet_transforms.ToTensor()])
                                 )
 
@@ -92,7 +92,7 @@ def main():
     # Move everything to cuda
     model = models.UNet1024().cuda()
     criterion = {'loss': models.weightedBCEplusDice().cuda(),
-                 'acc': models.diceLoss().cuda()}
+                 'acc': models.diceAcc().cuda()}
     optimizer = optim.SGD(model.parameters(),
                           weight_decay=args.weight_decay,
                           lr=args.lr,
@@ -102,7 +102,7 @@ def main():
     # run the training loop
     for epoch in range(args.start_epoch, args.epochs):
         # adjust lr according to the current epoch
-        model_utils.adjust_learning_rate(optimizer, epoch, args.lr)
+        model_utils.adjust_learning_rate(optimizer, epoch, args.lr, args.adjust_epoch)
 
         # train for one epoch
         train(train_loader, model, criterion, optimizer, epoch)
@@ -119,12 +119,11 @@ def main():
             'state_dict': model.state_dict(),
             'best_prec1': best_loss,
             'optimizer': optimizer.state_dict(),
-        }, is_best)
+        }, is_best, folder='./checkpoints/', filename=args.arch)
 
     logger.close()
 
 
-# define the training function
 def train(train_loader, model, criterion, optimizer, epoch):
     global args, logger, graph_logged
 
@@ -143,23 +142,26 @@ def train(train_loader, model, criterion, optimizer, epoch):
         # print (np.histogram(labels.cpu().data.numpy()))
 
         # compute output
-        optimizer.zero_grad()
         outputs = model(images)
 
         # measure loss
         loss = criterion['loss'](outputs, labels)
         losses.update(loss.data[0], images.size(0))
 
+        # compute gradient
+        loss.backward()
+
+        # take a step if we reach the batch accumulations
+        if args.batch_acum != 0 and batch_acum % args.batch_acum == 0:
+            optimizer.step()
+            optimizer.zero_grad()
+        batch_acum += 1
+
         # get accuracy
         mask = (outputs.data > 0.5).float()
-        acc = criterion['acc'](mask, labels.data)
+        mask_target = (labels.data > 0.5).float()
+        acc = criterion['acc'](mask, mask_target)
         accuracy.update(acc, images.size(0))
-
-        # compute gradient and do SGD step
-        # if args.batch_acum != 0 and batch_acum % args.batch_acum == 0:
-        loss.backward()
-        optimizer.step()
-        batch_acum += 1
 
         # logging
         if not graph_logged:
@@ -175,7 +177,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
                 logger.add_histogram('model/(train)' + tag, data_utils.to_np(value), i + 1)
                 logger.add_histogram('model/(train)' + tag + '/grad', data_utils.to_np(value.grad), i + 1)
 
-        logger.add_image('model/(train)output', make_grid(mask.float(), scale_each=True), i + 1)
+        logger.add_image('model/(train)output', make_grid(mask, scale_each=True), i + 1)
+        logger.add_image('model/(train)target', make_grid(mask_target, scale_each=True), i + 1)
 
         # update progress bar status
         pbar.set_description('EPOCH %d/ %d - LOSS %.4f/ %.4f(avg) - ACC %.4f/ %.4f(avg)'
@@ -203,8 +206,10 @@ def validate(val_loader, model, criterion, epoch):
         loss = criterion['loss'](outputs, labels)
         losses.update(loss.data[0], images.size(0))
 
+        # get accuracy
         mask = (outputs.data > 0.5).float()
-        acc = criterion['acc'](mask, labels.data)
+        mask_target = (labels.data > 0.5).float()
+        acc = criterion['acc'](mask, mask_target)
         accuracy.update(acc, images.size(0))
 
         # logging
@@ -212,6 +217,7 @@ def validate(val_loader, model, criterion, epoch):
         logger.add_scalar('data/(val)loss_avg', losses.avg, i + 1)
 
         logger.add_image('model/(val)output', make_grid(mask), i + 1)
+        logger.add_image('model/(val)target', make_grid(mask_target, scale_each=True), i + 1)
 
         # update progress bar status
         pbar.set_description('EPOCH %d/ %d - LOSS %.4f/ %.4f(avg) - ACC %.4f/ %.4f(avg)'

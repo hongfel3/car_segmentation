@@ -1,16 +1,12 @@
-from PIL import Image, ImageOps
-
-try:
-    import accimage
-except ImportError:
-    accimage = None
+import collections
+import math
 import numbers
 import random
-import collections
-from torchvision import transforms
-import math
+
 import cv2
 import numpy as np
+from PIL import Image, ImageOps
+from torchvision import transforms
 
 
 class Compose(object):
@@ -62,7 +58,7 @@ class ToNumpy(object):
             np_input = np.array(input.getdata()).astype(np.float32)
             # np_target is loaded in format 0-1 and transforms.ToTensor()
             # expects it in format 0-255
-            np_target = np.array(target.getdata()).astype(np.float32)*255
+            np_target = np.array(target.getdata()).astype(np.float32) * 255
 
             return np_input.reshape(input.size[0], input.size[1], 3), \
                    np_target.reshape(target.size[0], target.size[1], 1)

@@ -41,17 +41,19 @@ def rle_encode(mask_image):
     return runs
 
 
-def save_checkpoint(state, is_best, filename='./checkpoints/checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, folder='./checkpoints/', filename='checkpoint'):
     """
-    https://github.com/pytorch/examples/blob/master/imagenet/main.py
+
     :param state:
     :param is_best:
+    :param folder:
     :param filename:
     :return:
     """
-    torch.save(state, filename)
+    path = folder + filename + '.pth.tar'
+    torch.save(state, path)
     if is_best:
-        shutil.copyfile(filename, './checkpoints/model_best.pth.tar')
+        shutil.copyfile(path, folder + filename + 'model_best.pth.tar')
 
 
 class AverageMeter(object):

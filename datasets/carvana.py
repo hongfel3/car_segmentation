@@ -34,20 +34,22 @@ class CARVANA(Dataset):
             :param path:
             :return: array with all the paths to the images
             """
-            images_dir = [join(path, f) for f in os.listdir(path) if isfile(join(path, f))]
+            image_names = [f for f in os.listdir(path) if isfile(join(path, f))]
+            image_names.sort()
+            images_dir = [join(path, f) for f in image_names]
             images_dir.sort()
 
-            return images_dir
+            return images_dir, image_names
 
         # load the data regarding the subset
         if self.subset == "train":
-            self.data_path = load_images(self.root + "/train")
-            self.labels_path = load_images(self.root + "/train_masks")
+            self.data_path, self.data_names = load_images(self.root + "/train")
+            self.labels_path, _ = load_images(self.root + "/train_masks")
         elif self.subset == "val":
-            self.data_path = load_images(self.root + "/val")
-            self.labels_path = load_images(self.root + "/val_masks")
+            self.data_path, self.data_names = load_images(self.root + "/val")
+            self.labels_path, _ = load_images(self.root + "/val_masks")
         elif self.subset == "test":
-            self.data_path = load_images(self.root + "/test")
+            self.data_path, self.data_names = load_images(self.root + "/test")
             self.labels_path = None
         else:
             raise RuntimeError('Invalid subset ' + self.subset + ', it must be one of:'
@@ -67,6 +69,8 @@ class CARVANA(Dataset):
         # apply transforms to both
         if self.transform is not None:
             img, target = self.transform(img, target)
+
+        target = -1 if target is None else target
 
         return img, target
 

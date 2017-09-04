@@ -53,7 +53,7 @@ class ToNumpy(object):
         if target is None:
 
             np_input = np.array(input.getdata()).astype(np.float32)
-            return np_input.reshape(input.size), target
+            return np_input.reshape(input.size[0], input.size[1], 3), target
         else:
             np_input = np.array(input.getdata()).astype(np.float32)
             # np_target is loaded in format 0-1 and transforms.ToTensor()

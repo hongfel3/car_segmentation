@@ -1,4 +1,5 @@
 import argparse
+import os
 
 import torch
 import torch.optim as optim
@@ -35,7 +36,7 @@ parser.add_argument('-b', '--batch-size', default=1, type=int, metavar='N', help
 parser.add_argument('--lr', '--learning-rate', default=1e-4, type=float, metavar='LR', help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')
 parser.add_argument('--weight-decay', default=5e-4, type=float, metavar='W', help='weight decay')
-parser.add_argument('--nesterov', default=False, type=bool, metavar='N', help='use nesterov momentum (default:True)')
+parser.add_argument('--nesterov', dest='nesterov', action='store_true', help='use nesterov momentum (default:True)')
 parser.add_argument('--batch_acum', default=10, type=bool, metavar='B',
                     help='number of iterations the batch is accumulated')
 
@@ -43,7 +44,6 @@ parser.add_argument('--model_log', default=500, type=int, metavar='I', help='num
 
 parser.add_argument('--resume', default='', type=str, metavar='PATH', help='path to latest checkpoint')
 parser.add_argument('--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
-parser.add_argument('--test', dest='test', action='store_true', help='evaluate model on test set')
 parser.add_argument('--pretrained', dest='pretrained', action='store_true', help='use pre-trained model')
 
 global args, best_loss, logger, graph_logged
@@ -55,6 +55,13 @@ graph_logged = False
 
 def main():
     global args, best_loss
+
+    # start from a previous point
+    args.resume = './checkpoints/UNET_1024_ShiftScaleRotatemodel_best.pth.tar'
+
+    # create necessary folders
+    os.makedirs('./checkpoints', exist_ok=True)
+    os.makedirs('./runs', exist_ok=True)
 
     # create datasets
     train_dataset = dsets.CARVANA(root=args.dir,
@@ -90,7 +97,10 @@ def main():
 
     # create model, define the loss function and the optimizer.
     # Move everything to cuda
+
+
     model = models.UNet1024().cuda()
+
     criterion = {'loss': models.weightedBCEplusDice().cuda(),
                  'acc': models.diceAcc().cuda()}
     optimizer = optim.SGD(model.parameters(),
@@ -98,6 +108,24 @@ def main():
                           lr=args.lr,
                           momentum=args.momentum,
                           nesterov=args.nesterov)
+
+    # optionally resume from a checkpoint
+    if args.resume:
+        if os.path.isfile(args.resume):
+            print("=> loading checkpoint '{}'".format(args.resume))
+            checkpoint = torch.load(args.resume)
+            args.start_epoch = checkpoint['epoch']
+            best_loss = checkpoint['best_prec1']
+            model.load_state_dict(checkpoint['state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            print("=> loaded checkpoint '{}' (epoch {})"
+                  .format(args.resume, checkpoint['epoch']))
+        else:
+            print("=> no checkpoint found at '{}'".format(args.resume))
+
+    if args.evaluate:
+        validate(val_loader, model, criterion)
+        return
 
     # run the training loop
     for epoch in range(args.start_epoch, args.epochs):
@@ -117,7 +145,7 @@ def main():
             'epoch': epoch + 1,
             'arch': args.arch,
             'state_dict': model.state_dict(),
-            'best_prec1': best_loss,
+            'best_loss': best_loss,
             'optimizer': optimizer.state_dict(),
         }, is_best, folder='./checkpoints/', filename=args.arch)
 
@@ -127,17 +155,22 @@ def main():
 def train(train_loader, model, criterion, optimizer, epoch):
     global args, logger, graph_logged
 
+    # set model to train
     model.train()
+
+    # set initial vars
     losses = data_utils.AverageMeter()
     accuracy = data_utils.AverageMeter()
-
     batch_acum = 0
+
     # set a progress bar
     pbar = tqdm(enumerate(train_loader), total=len(train_loader))
     for i, (images, labels) in pbar:
-        # Convert torch tensor to Variable
+
+        # Convert torch tensor to cuda Variable
         images = Variable(images.cuda())
         labels = Variable(labels.cuda())
+
         # print(labels.cpu().data)
         # print (np.histogram(labels.cpu().data.numpy()))
 

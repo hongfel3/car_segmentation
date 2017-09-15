@@ -115,7 +115,7 @@ def main():
 
             # run the rle with the mask and append it with the proper format
             # print(test_dataset.data_names[j] + ',' + data_utils.mask_to_RLEstring(new_output.numpy()))
-            f.write(test_dataset.data_names[j] + ',' + data_utils.mask_to_RLEstring(new_output.numpy()))
+            f.write(test_dataset.data_names[j] + ',' + data_utils.mask_to_RLEstring(new_output.numpy()) + '\n')
 
     # close the open file
     f.close()

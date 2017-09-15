@@ -106,18 +106,16 @@ def main():
         outputs = model(images)
         outputs = F.sigmoid(outputs).data.cpu()
 
-        for j in range(outputs.size(0)):
-            # print('\n' + str(test_dataset.data_names[j]))
-
+        for j in range(images.size(0)):
             # change output to a 3D tensor (1, height, width), rescale to the original size and mask it
             new_output = (to_orig_size(outputs[j].view(1, outputs[j].size(0), outputs[j].size(1))) > 0.5)
-            # data_utils.im_show([to_orig_size(torch.squeeze(images.data[j].cpu())), new_output])
+            # data_utils.im_show([to_orig_size((images.data[j].cpu())), new_output])
 
             # run the rle with the mask and append it with the proper format
-            # print(test_dataset.data_names[j] + ',' + data_utils.mask_to_RLEstring(new_output.numpy()))
-            f.write(test_dataset.data_names[j] + ',' + data_utils.mask_to_RLEstring(new_output.numpy()) + '\n')
+            f.write(test_dataset.data_names[i * args.batch_size + j] + ',' +
+                    data_utils.mask_to_RLEstring(new_output.numpy()) + '\n')
 
-    # close the open file
+    # close the file
     f.close()
 
 

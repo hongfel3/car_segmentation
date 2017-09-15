@@ -77,7 +77,6 @@ class small_UNET_256(nn.Module):
         # 256
         out = F.upsample(out, scale_factor=2)
 
-        # return probabilites between 0-1 (not masked yet)
         return self.output(out)
 
 

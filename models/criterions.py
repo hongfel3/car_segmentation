@@ -60,16 +60,6 @@ class SoftDiceLoss(nn.Module):
         return score
 
 
-class diceLoss(nn.Module):
-    def __init__(self, size_average=True):
-        super(diceLoss, self).__init__()
-        self.dice = diceAcc(size_average)
-
-    def forward(self, inputs, targets):
-        # inputs = F.sigmoid(inputs)
-        return 1 - self.dice(inputs, targets)
-
-
 class weightedDiceLoss(nn.Module):
     def __init__(self):
         super(weightedDiceLoss, self).__init__()
@@ -92,7 +82,7 @@ class BCEplusDice(nn.Module):
     def __init__(self, weight=None, size_average=True):
         super(BCEplusDice, self).__init__()
         self.BCE = BCELoss_seg()
-        self.dice = diceLoss()
+        self.dice = SoftDiceLoss()
 
     def forward(self, inputs, targets):
         return self.BCE(inputs, targets) + self.dice(inputs, targets)

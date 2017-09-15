@@ -3,7 +3,53 @@ import shutil
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torchvision import transforms
+from PIL import Image
+
+
+class ToPILImage(object):
+    """Convert a tensor to PIL Image.
+
+    Converts a torch.*Tensor of shape C x H x W or a numpy ndarray of shape
+    H x W x C to a PIL.Image while preserving the value range.
+    """
+
+    def __call__(self, pic):
+        """
+        Args:
+            pic (Tensor or numpy.ndarray): Image to be converted to PIL.Image.
+
+        Returns:
+            PIL.Image: Image converted to PIL.Image.
+
+        """
+        npimg = pic
+        mode = None
+        if isinstance(pic, torch.FloatTensor):
+            pic = pic.mul(255).byte()
+        if torch.is_tensor(pic):
+            if len(pic.shape)==2:
+                npimg = np.transpose(pic.numpy().reshape(1, pic.shape[0], pic.shape[1]), (1, 2, 0))
+            elif len(pic.shape)==3:
+                npimg = np.transpose(pic.numpy().reshape(pic.shape[0], pic.shape[1], pic.shape[2]), (1, 2, 0))
+
+
+        assert isinstance(npimg, np.ndarray), 'pic should be Tensor or ndarray'
+        if npimg.shape[2] == 1:
+            npimg = npimg[:, :, 0]
+
+            if npimg.dtype == np.uint8:
+                mode = 'L'
+            if npimg.dtype == np.int16:
+                mode = 'I;16'
+            if npimg.dtype == np.int32:
+                mode = 'I'
+            elif npimg.dtype == np.float32:
+                mode = 'F'
+        else:
+            if npimg.dtype == np.uint8:
+                mode = 'RGB'
+        assert mode is not None, '{} is not supported'.format(npimg.dtype)
+        return Image.fromarray(npimg, mode=mode)
 
 
 def im_show(img_list):
@@ -12,10 +58,11 @@ def im_show(img_list):
     :param img_list:
     :return:
     """
-    to_PIL = transforms.ToPILImage()
+    to_PIL = ToPILImage()
 
     for idx, img in enumerate(img_list):
-        img = np.array(to_PIL(img))
+
+        img = np.array(to_PIL(torch.squeeze(img)))
         plt.subplot(100 + 10 * len(img_list) + (idx + 1))
         plt.imshow(img)
         plt.colorbar()
@@ -39,6 +86,9 @@ def rle_encode(mask_image):
     runs = np.where(pixels[1:] != pixels[:-1])[0] + 2
     runs[1::2] = runs[1::2] - runs[:-1:2]
     return runs
+
+def mask_to_RLEstring(mask):
+    return ' '.join(str(x) for x in rle_encode(mask))
 
 
 def save_checkpoint(state, is_best, folder='./checkpoints/', filename='checkpoint'):

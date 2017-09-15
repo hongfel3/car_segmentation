@@ -165,12 +165,10 @@ class RandomShiftScaleRotate(object):
 
             input = cv2.warpPerspective(input, mat, (width, height), flags=cv2.INTER_LINEAR,
                                         borderMode=self.borderMode,
-                                        borderValue=(0, 0,
-                                                     0,))
+                                        borderValue=(0, 0, 0,))
             target = cv2.warpPerspective(target, mat, (width, height), flags=cv2.INTER_LINEAR,
                                          borderMode=self.borderMode,
-                                         borderValue=(0, 0,
-                                                      0,))
+                                         borderValue=(0, 0, 0,))
             target = np.reshape(target, (target.shape[0], target.shape[1], 1))
             return input, target
         return input, target

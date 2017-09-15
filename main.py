@@ -7,14 +7,17 @@ from tensorboard import SummaryWriter
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torchvision.utils import make_grid
-# from tf_logger import Logger
+import numpy as np
+torch.backends.cudnn.benchmark = True  # enables cudnn's auto-tuner
+
 from tqdm import tqdm
 
 import datasets as dsets
 import datasets.utils as data_utils
 import models
 import models.utils as model_utils
-from datasets import transforms as unet_transforms
+from datasets import transforms_unet as unet_transforms
+from datasets import samplers as data_samplers
 
 # define the parser arguments
 parser = argparse.ArgumentParser(description='Car-segmentation kaggle competition')
@@ -24,20 +27,22 @@ parser.add_argument('--dir', default="./data/", type=str, metavar='D',
 parser.add_argument('--logs_dir', default=None, type=str, metavar='L',
                     help='path to the logs folder (default: ./logs/')
 
-parser.add_argument('--arch', '-a', metavar='ARCH', default='UNET_1024_ShiftScaleRotate')
+parser.add_argument('--arch', '-a', metavar='ARCH', default='UNET_256_ShiftScaleRotate_noweightedLoss')
 parser.add_argument('--workers', default=4, type=int, metavar='N', help='number of data loading workers (default: 4)')
 
 parser.add_argument('--epochs', default=45, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='manual epoch number (useful on restarts)')
-parser.add_argument('--adjust-epoch', default=15, type=int, metavar='E',
+parser.add_argument('--adjust-epoch', default=10, type=int, metavar='E',
                     help='Number of epochs to run to adjust the learning rate')
+parser.add_argument('--perc-val', default=0.1, type=int, metavar='V',
+                    help='percentage of the train set used for validation')
 
-parser.add_argument('-b', '--batch-size', default=1, type=int, metavar='N', help='mini-batch size (default: 256)')
-parser.add_argument('--lr', '--learning-rate', default=1e-4, type=float, metavar='LR', help='initial learning rate')
+parser.add_argument('-b', '--batch-size', default=20, type=int, metavar='N', help='mini-batch size (default: 256)')
+parser.add_argument('--lr', '--learning-rate', default=1e-2, type=float, metavar='LR', help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum')
 parser.add_argument('--weight-decay', default=5e-4, type=float, metavar='W', help='weight decay')
 parser.add_argument('--nesterov', dest='nesterov', action='store_true', help='use nesterov momentum (default:True)')
-parser.add_argument('--batch_acum', default=10, type=bool, metavar='B',
+parser.add_argument('--batch_acum', default=0, type=bool, metavar='B',
                     help='number of iterations the batch is accumulated')
 
 parser.add_argument('--model_log', default=500, type=int, metavar='I', help='number of iterations between logs')
@@ -56,18 +61,15 @@ graph_logged = False
 def main():
     global args, best_loss
 
-    # start from a previous point
-    args.resume = './checkpoints/UNET_1024_ShiftScaleRotatemodel_best.pth.tar'
-
     # create necessary folders
     os.makedirs('./checkpoints', exist_ok=True)
     os.makedirs('./runs', exist_ok=True)
 
     # create datasets
     train_dataset = dsets.CARVANA(root=args.dir,
-                                  subset="train",
+                                  train=True,
                                   transform=unet_transforms.Compose([
-                                      unet_transforms.Scale((1024, 1024)),
+                                      unet_transforms.Scale((256, 256)),
                                       unet_transforms.ToNumpy(),
                                       unet_transforms.RandomShiftScaleRotate(),
                                       unet_transforms.ToTensor(),
@@ -75,24 +77,28 @@ def main():
                                   )
 
     val_dataset = dsets.CARVANA(root=args.dir,
-                                subset="val",
+                                train=True,
                                 transform=unet_transforms.Compose([
-                                    unet_transforms.Scale((1024, 1024)),
+                                    unet_transforms.Scale((256, 256)),
                                     unet_transforms.ToNumpy(),
                                     unet_transforms.ToTensor()])
                                 )
+
+    num_val = int(len(train_dataset) * args.perc_val)
+    num_train = len(train_dataset) - num_val
 
     # define the dataloader with the previous dataset
     train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
                                                batch_size=args.batch_size,
                                                shuffle=True,
-                                               pin_memory=True,
+                                               # sampler=data_samplers.ChunkSampler(num_train, start=0),
                                                num_workers=4)
 
     val_loader = torch.utils.data.DataLoader(dataset=val_dataset,
                                              batch_size=args.batch_size,
                                              shuffle=False,
                                              pin_memory=True,
+                                             sampler=data_samplers.ChunkSampler(num_val, start=num_train),
                                              num_workers=4)
 
     # create model, define the loss function and the optimizer.
@@ -101,7 +107,7 @@ def main():
 
     model = models.UNet1024().cuda()
 
-    criterion = {'loss': models.weightedBCEplusDice().cuda(),
+    criterion = {'loss': models.BCEplusDice().cuda(),
                  'acc': models.diceAcc().cuda()}
     optimizer = optim.SGD(model.parameters(),
                           weight_decay=args.weight_decay,
@@ -124,7 +130,7 @@ def main():
             print("=> no checkpoint found at '{}'".format(args.resume))
 
     if args.evaluate:
-        validate(val_loader, model, criterion)
+        validate(val_loader, model, criterion, checkpoint['epoch'])
         return
 
     # run the training loop
@@ -133,10 +139,10 @@ def main():
         model_utils.adjust_learning_rate(optimizer, epoch, args.lr, args.adjust_epoch)
 
         # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch)
+        curr_loss = train(train_loader, model, criterion, optimizer, epoch)
 
         # evaluate the model
-        curr_loss = validate(val_loader, model, criterion, epoch)
+        # curr_loss = validate(val_loader, model, criterion, epoch)
 
         # store best loss and save a model checkpoint
         is_best = curr_loss < best_loss
@@ -185,9 +191,10 @@ def train(train_loader, model, criterion, optimizer, epoch):
         loss.backward()
 
         # take a step if we reach the batch accumulations
-        if args.batch_acum != 0 and batch_acum % args.batch_acum == 0:
+        if args.batch_acum == 0 or batch_acum % args.batch_acum == 0:
             optimizer.step()
             optimizer.zero_grad()
+
         batch_acum += 1
 
         # get accuracy
@@ -201,8 +208,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
             logger.add_graph(model, outputs)
             graph_logged = True
 
-        logger.add_scalar('(train)loss_val', losses.val, i + 1)
-        logger.add_scalar('(train)loss_avg', losses.avg, i + 1)
+        logger.add_scalar('(train)loss_val', losses.val, (epoch * len(train_loader)) + i + 1)
+        logger.add_scalar('(train)loss_avg', losses.avg, (epoch * len(train_loader)) + i + 1)
 
         if i % args.model_log == 0:
             for tag, value in model.named_parameters():
@@ -210,13 +217,15 @@ def train(train_loader, model, criterion, optimizer, epoch):
                 logger.add_histogram('model/(train)' + tag, data_utils.to_np(value), i + 1)
                 logger.add_histogram('model/(train)' + tag + '/grad', data_utils.to_np(value.grad), i + 1)
 
-        logger.add_image('model/(train)output', make_grid(mask, scale_each=True), i + 1)
-        logger.add_image('model/(train)target', make_grid(mask_target, scale_each=True), i + 1)
+        idx = np.random.randint(0, len(labels))
+        logger.add_image('model/(train)output', make_grid(mask[idx], scale_each=True), i + 1)
+        logger.add_image('model/(train)target', make_grid(mask_target[idx], scale_each=True), i + 1)
 
         # update progress bar status
         pbar.set_description('EPOCH %d/ %d - LOSS %.4f/ %.4f(avg) - ACC %.4f/ %.4f(avg)'
                              % (epoch + 1, args.epochs, losses.val, losses.avg, accuracy.val,
                                 accuracy.avg))  # define the validation function
+    return losses.avg
 
 
 def validate(val_loader, model, criterion, epoch):
